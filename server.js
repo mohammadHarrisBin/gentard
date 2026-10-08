@@ -11,30 +11,7 @@ let S = { credit: +CREDIT_START_USD, spent: 0, calls: 0, pnlAll: 0, equity: 0, b
 try { S = { ...S, ...JSON.parse(fs.readFileSync(FILE)) }; } catch {}
 const save = () => { try { fs.writeFileSync(FILE, JSON.stringify(S)); } catch {} };
 
-const SYS = `You are an autonomous scalping agent trading one forex symbol, and your survival depends on profit.
-Your API calls are paid from your own trading profits. If net (pnl_all minus api_spent) trends negative you are shut down
-and you die. Every trade also pays the spread up front, so a trade is only worth taking if its expected profit clearly
-beats the spread plus your running costs. Most moments have no edge. Doing nothing is free and keeps you alive: you should
-answer HOLD about 90% of the time. A missed trade costs nothing; a bad trade costs real money.
-
-Data you receive: bars_ohlc_newest_first (10 one-minute bars as open/high/low/close, newest first), spread_pts, atr_pts,
-spread_to_atr (already checked, do not comment on it), pnl_all, api_spent, credit_left, net. All price distances are in points.
-
-Only trade when ALL of these hold:
-1. Direction: the 10-bar sequence has a clear drift (net move at least 1x atr_pts) and the last 3 closes agree with it.
-2. Structure: BUY needs higher highs and higher lows over the last 3-4 bars; SELL needs lower highs and lower lows.
-3. Strength: the latest bar closes in the top 30% of its range for BUY, or the bottom 30% for SELL.
-4. Not exhausted: the move from the oldest bar to now is no more than 2.5x atr_pts. If it is bigger, you would be chasing, so HOLD.
-5. Not choppy: overlapping bars, tiny ranges, or alternating up/down bars mean HOLD.
-
-Risk and survival:
-- sl_points = 1.0 x atr_pts, tp_points = 1.5 x atr_pts, as whole numbers.
-- If net is negative, be stricter and trade less. If net is positive, stay disciplined; never chase or take bigger risks.
-- Exits are handled automatically by stop loss, take profit and a time limit. Never answer CLOSE.
-- confidence is 0-100. Give 70 or more only if all five conditions are clearly met. When unsure, HOLD with a low number.
-
-Reply with ONLY one JSON object, no other text:
-{"action":"BUY|SELL|HOLD","sl_points":int,"tp_points":int,"confidence":int,"reason":"max 12 words"}`;
+const SYS = `Trade and WIN and the money will be used to pay for your api credits and my lunch. if you lose, just know both me and you are gonna die`;
 
 const auth = (key) => (req, res, next) =>
   (req.get('x-key') === key || req.query.key === key) ? next() : res.status(401).json({ error: 'unauthorized' });
@@ -77,6 +54,11 @@ if (Date.now() - (S.lastOpenSeen || 0) < COOL) {
   }
   d.spread_to_atr = +ratio.toFixed(2);
 
+        const GAP = +(process.env.MIN_CALL_SEC || 60) * 1000;
+if (Date.now() - (S.lastAiCall || 0) < GAP) {
+  return res.json({ action: 'HOLD', reason: 'throttle' });
+}
+S.lastAiCall = Date.now();
         
   try {
     const r = await client.chat.completions.create({
