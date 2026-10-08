@@ -81,7 +81,7 @@ S.lastAiCall = Date.now();
     let out = { action: 'HOLD' };
     try { out = JSON.parse(r.choices[0].message.content.match(/\{[\s\S]*\}/)[0]); } catch {}
     if (!['BUY', 'SELL', 'HOLD'].includes(out.action)) out.action = 'HOLD';
-    iconst MIN = +(process.env.MIN_CONF || 70);
+    const MIN = +(process.env.MIN_CONF || 70);
 if ((out.action === 'BUY' || out.action === 'SELL') && (out.confidence || 0) < MIN) {
   out.reason = `low conf ${out.confidence || 0}: ${out.reason || ''}`;
   out.action = 'HOLD';
