@@ -1,1 +1,43 @@
-
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Trader</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:16px}
+h1{font-size:18px;margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.c{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}.c small{color:#8b949e}.c b{display:block;font-size:22px;margin-top:4px}
+.g{color:#3fb950}.r{color:#f85149}button{background:#238636;color:#fff;border:0;border-radius:6px;padding:8px 12px;margin:12px 6px 0 0;cursor:pointer}
+button.x{background:#da3633}canvas{width:100%;height:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}td{padding:4px 6px;border-bottom:1px solid #21262d}
+</style></head><body>
+<h1>AI Trader <span id="st"></span></h1>
+<div class="grid" id="cards"></div>
+<button id="pb"></button><button onclick="topup()">Top up credit</button>
+<canvas id="cv" width="800" height="140"></canvas>
+<table id="log"></table>
+<script>
+const K=new URLSearchParams(location.search).get('key')||prompt('Dashboard key');
+const H={'x-key':K,'Content-Type':'application/json'};
+let S={};
+const m=n=>(n<0?'-':'')+'$'+Math.abs(n).toFixed(2);
+async function load(){
+  S=await (await fetch('/api/state',{headers:H})).json();
+  document.getElementById('st').innerHTML=S.online?'<span class="g">● EA online</span>':'<span class="r">● EA offline</span>';
+  const cards=[['Credit left',m(S.credit),S.credit<1?'r':''],['API spent',m(S.spent),''],
+   ['Trading P/L',m(S.pnlAll),S.pnlAll>=0?'g':'r'],['NET earned',m(S.net),S.net>=0?'g':'r'],
+   ['Equity',m(S.equity),''],['AI calls',S.calls,'']];
+  document.getElementById('cards').innerHTML=cards.map(c=>`<div class="c"><small>${c[0]}</small><b class="${c[2]}">${c[1]}</b></div>`).join('');
+  document.getElementById('pb').textContent=S.paused?'Resume':'Pause';
+  document.getElementById('pb').className=S.paused?'':'x';
+  document.getElementById('log').innerHTML=S.log.slice(0,15).map(l=>`<tr><td>${new Date(l.t).toLocaleTimeString()}</td><td>${l.action}</td><td>${l.reason}</td><td>$${l.cost.toFixed(5)}</td></tr>`).join('');
+  draw();
+}
+function draw(){
+  const cv=document.getElementById('cv'),x=cv.getContext('2d'),d=S.curve.map(p=>p[1]);
+  x.clearRect(0,0,800,140);if(d.length<2)return;
+  const lo=Math.min(...d,0),hi=Math.max(...d,0.01),sy=v=>130-(v-lo)/(hi-lo||1)*120;
+  x.strokeStyle='#58a6ff';x.beginPath();d.forEach((v,i)=>{const px=i/(d.length-1)*790+5;i?x.lineTo(px,sy(v)):x.moveTo(px,sy(v))});x.stroke();
+  x.strokeStyle='#30363d';x.beginPath();x.moveTo(0,sy(0));x.lineTo(800,sy(0));x.stroke();
+}
+document.getElementById('pb').onclick=async()=>{await fetch('/api/pause',{method:'POST',headers:H,body:JSON.stringify({paused:!S.paused})});load()};
+async function topup(){const usd=prompt('USD added to your Nebius balance?');if(usd){await fetch('/api/topup',{method:'POST',headers:H,body:JSON.stringify({usd})});load()}}
+load();setInterval(load,3000);
+</script></body></html>
