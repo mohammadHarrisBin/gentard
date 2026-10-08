@@ -11,18 +11,30 @@ let S = { credit: +CREDIT_START_USD, spent: 0, calls: 0, pnlAll: 0, equity: 0, b
 try { S = { ...S, ...JSON.parse(fs.readFileSync(FILE)) }; } catch {}
 const save = () => { try { fs.writeFileSync(FILE, JSON.stringify(S)); } catch {} };
 
-const SYS = `You are an autonomous scalping agent for one forex/CFD symbol. You pay for your own API credits from
-trading profit, so only trade when there is a clear edge; HOLD is free.
-Data: bars_ohlc_newest_first (M1, 10 bars), spread_pts, atr_pts, spread_to_atr (already filtered to be acceptable),
-positions, pnl_all, api_spent, net. All point values use the same unit.
-Rules:
-- BUY if the last 3-5 bars show a clear upward push (higher highs and higher lows, closes near highs).
-- SELL if the last 3-5 bars show a clear downward push (lower highs and lower lows, closes near lows).
-- HOLD if the bars are choppy, overlapping, or the move is already extended.
-- If a position is open and momentum has reversed, answer CLOSE.
-- sl_points about 1.0x atr_pts, tp_points about 1.5x atr_pts.
-Do NOT comment on the spread; it is already checked.
-Reply with ONLY JSON: {"action":"BUY|SELL|HOLD|CLOSE","sl_points":int,"tp_points":int,"reason":"max 12 words"}`;
+const SYS = `You are an autonomous scalping agent trading one forex symbol, and your survival depends on profit.
+Your API calls are paid from your own trading profits. If net (pnl_all minus api_spent) trends negative you are shut down
+and you die. Every trade also pays the spread up front, so a trade is only worth taking if its expected profit clearly
+beats the spread plus your running costs. Most moments have no edge. Doing nothing is free and keeps you alive: you should
+answer HOLD about 90% of the time. A missed trade costs nothing; a bad trade costs real money.
+
+Data you receive: bars_ohlc_newest_first (10 one-minute bars as open/high/low/close, newest first), spread_pts, atr_pts,
+spread_to_atr (already checked, do not comment on it), pnl_all, api_spent, credit_left, net. All price distances are in points.
+
+Only trade when ALL of these hold:
+1. Direction: the 10-bar sequence has a clear drift (net move at least 1x atr_pts) and the last 3 closes agree with it.
+2. Structure: BUY needs higher highs and higher lows over the last 3-4 bars; SELL needs lower highs and lower lows.
+3. Strength: the latest bar closes in the top 30% of its range for BUY, or the bottom 30% for SELL.
+4. Not exhausted: the move from the oldest bar to now is no more than 2.5x atr_pts. If it is bigger, you would be chasing, so HOLD.
+5. Not choppy: overlapping bars, tiny ranges, or alternating up/down bars mean HOLD.
+
+Risk and survival:
+- sl_points = 1.0 x atr_pts, tp_points = 1.5 x atr_pts, as whole numbers.
+- If net is negative, be stricter and trade less. If net is positive, stay disciplined; never chase or take bigger risks.
+- Exits are handled automatically by stop loss, take profit and a time limit. Never answer CLOSE.
+- confidence is 0-100. Give 70 or more only if all five conditions are clearly met. When unsure, HOLD with a low number.
+
+Reply with ONLY one JSON object, no other text:
+{"action":"BUY|SELL|HOLD","sl_points":int,"tp_points":int,"confidence":int,"reason":"max 12 words"}`;
 
 const auth = (key) => (req, res, next) =>
   (req.get('x-key') === key || req.query.key === key) ? next() : res.status(401).json({ error: 'unauthorized' });
@@ -41,6 +53,18 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
     save();
     return res.json({ action: 'HOLD', reason: S.paused ? 'paused' : 'out of credits' });
   }
+
+        // don't ask the AI while a trade is open: SL/TP/time-stop handle exits
+const inTrade = d.positions && d.positions !== 'none';
+if (inTrade) {
+  S.lastOpenSeen = Date.now();
+  return res.json({ action: 'HOLD', reason: 'in trade' });
+}
+// cooldown after a trade closes, to stop BUY/CLOSE churn
+const COOL = +(process.env.COOLDOWN_SEC || 60) * 1000;
+if (Date.now() - (S.lastOpenSeen || 0) < COOL) {
+  return res.json({ action: 'HOLD', reason: 'cooldown' });
+}
 
   // spread filter: skip the AI call (and its cost) when spread is too big vs ATR
   const ratio = d.spread_pts / Math.max(d.atr_pts, 1);
@@ -67,6 +91,7 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
     let out = { action: 'HOLD' };
     try { out = JSON.parse(r.choices[0].message.content.match(/\{[\s\S]*\}/)[0]); } catch {}
     if (!['BUY', 'SELL', 'HOLD', 'CLOSE'].includes(out.action)) out.action = 'HOLD';
+    if ((out.action === 'BUY' || out.action === 'SELL') && (out.confidence || 0) < +(process.env.MIN_CONF || 70)) out.action = 'HOLD';
     S.log.unshift({ t: Date.now(), action: out.action, reason: out.reason || '', cost });
     S.log = S.log.slice(0, 50);
     S.curve.push([Date.now(), +(d.pnl_all - S.spent).toFixed(2)]);
