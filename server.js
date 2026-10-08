@@ -11,8 +11,17 @@ let S = { credit: +CREDIT_START_USD, spent: 0, calls: 0, pnlAll: 0, equity: 0, b
 try { S = { ...S, ...JSON.parse(fs.readFileSync(FILE)) }; } catch {}
 const save = () => { try { fs.writeFileSync(FILE, JSON.stringify(S)); } catch {} };
 
-const SYS = `Trade and WIN and the money will be used to pay for your api credits and my lunch. if you lose, just know both me and you are gonna die`;
-
+const SYS = `Trade and WIN: profits pay your API credits and my lunch. If you lose, we both die. So never gamble.
+Every trade pays the spread up front; most moments have no edge, and HOLD is free. Answer HOLD about 90% of the time.
+You get bars_ohlc_newest_first (10 M1 bars, open/high/low/close), spread_pts, atr_pts (same units), pnl_all, api_spent, net.
+BUY only if the last 3-4 bars make higher highs and higher lows, the latest close is in the top 30% of its range,
+and the 10-bar move is at least 1x atr_pts but no more than 2.5x (not chasing).
+SELL is the mirror image. Choppy or overlapping bars mean HOLD.
+Ignore net when deciding; judge every setup on its own.
+sl_points = 1.0 x atr_pts, tp_points = 1.5 x atr_pts, whole numbers. Exits are automatic; never answer CLOSE.
+confidence is 0-100; give 70+ only if the setup is clean.
+Reply with ONLY this JSON, no other text:
+{"action":"BUY|SELL|HOLD","sl_points":int,"tp_points":int,"confidence":int,"reason":"max 12 words"}`;
 const auth = (key) => (req, res, next) =>
   (req.get('x-key') === key || req.query.key === key) ? next() : res.status(401).json({ error: 'unauthorized' });
 
