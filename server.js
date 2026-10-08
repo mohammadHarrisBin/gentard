@@ -11,9 +11,17 @@ let S = { credit: +CREDIT_START_USD, spent: 0, calls: 0, pnlAll: 0, equity: 0, b
 try { S = { ...S, ...JSON.parse(fs.readFileSync(FILE)) }; } catch {}
 const save = () => { try { fs.writeFileSync(FILE, JSON.stringify(S)); } catch {} };
 
-const SYS = `You are an autonomous high-frequency forex/CFD scalping agent. You must pay for your own API credits
-from trading profit: every call costs real money and if net P/L (pnl_all - api_spent) stays negative you get shut down.
-Only trade with a clear short-term edge. HOLD is free and often correct. Avoid trading when spread is large vs ATR.
+const SYS = `You are an autonomous scalping agent for one forex/CFD symbol. You pay for your own API credits from
+trading profit, so only trade when there is a clear edge; HOLD is free.
+Data: bars_ohlc_newest_first (M1, 10 bars), spread_pts, atr_pts, spread_to_atr (already filtered to be acceptable),
+positions, pnl_all, api_spent, net. All point values use the same unit.
+Rules:
+- BUY if the last 3-5 bars show a clear upward push (higher highs and higher lows, closes near highs).
+- SELL if the last 3-5 bars show a clear downward push (lower highs and lower lows, closes near lows).
+- HOLD if the bars are choppy, overlapping, or the move is already extended.
+- If a position is open and momentum has reversed, answer CLOSE.
+- sl_points about 1.0x atr_pts, tp_points about 1.5x atr_pts.
+Do NOT comment on the spread; it is already checked.
 Reply with ONLY JSON: {"action":"BUY|SELL|HOLD|CLOSE","sl_points":int,"tp_points":int,"reason":"max 12 words"}`;
 
 const auth = (key) => (req, res, next) =>
@@ -33,6 +41,19 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
     save();
     return res.json({ action: 'HOLD', reason: S.paused ? 'paused' : 'out of credits' });
   }
+
+  // spread filter: skip the AI call (and its cost) when spread is too big vs ATR
+  const ratio = d.spread_pts / Math.max(d.atr_pts, 1);
+  const MAXR = +(process.env.MAX_SPREAD_ATR || 0.3);
+  if (ratio > MAXR) {
+    S.log.unshift({ t: Date.now(), action: 'HOLD', reason: `skipped: spread/ATR ${ratio.toFixed(2)} > ${MAXR}`, cost: 0 });
+    S.log = S.log.slice(0, 50);
+    save();
+    return res.json({ action: 'HOLD', reason: 'spread filter' });
+  }
+  d.spread_to_atr = +ratio.toFixed(2);
+
+        
   try {
     const r = await client.chat.completions.create({
       model: MODEL_ID, temperature: 0.2, max_tokens: 150,
