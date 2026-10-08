@@ -22,7 +22,7 @@ const client = new OpenAI({
 
 const FILE = path.join(DATA_DIR, 'state.json');
 
-// Persistent state schema
+// Persistent state structure
 let S = {
   credit: +CREDIT_START_USD,
   spent: 0,
@@ -37,12 +37,12 @@ let S = {
   curve: [],
 };
 
-// Load saved persistent state
+// Load persistent state
 try {
   S = { ...S, ...JSON.parse(fs.readFileSync(FILE)) };
 } catch {}
 
-// In-memory runtime tracking (NOT saved to state.json to prevent stale cooldown/throttle loops)
+// Temporary runtime-only tracking (not saved to state.json to avoid stale lockouts)
 let runtimeState = {
   lastAiCall: 0,
   lastOpenSeen: 0,
@@ -93,20 +93,20 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
     return res.json({ action: 'HOLD', reason: S.paused ? 'paused' : 'out of credits' });
   }
 
-  // Position Check
+  // Active position check
   const inTrade = d.positions && d.positions !== 'none';
   if (inTrade) {
     runtimeState.lastOpenSeen = Date.now();
     return res.json({ action: 'HOLD', reason: 'in trade' });
   }
 
-  // Cooldown filter
+  // Post-trade cooldown
   const COOL = +(process.env.COOLDOWN_SEC || 60) * 1000;
   if (Date.now() - runtimeState.lastOpenSeen < COOL) {
     return res.json({ action: 'HOLD', reason: 'cooldown' });
   }
 
-  // Spread filter
+  // Spread vs ATR ratio check
   const ratio = d.spread_pts / Math.max(d.atr_pts, 1);
   const MAXR = +(process.env.MAX_SPREAD_ATR || 0.3);
   if (ratio > MAXR) {
@@ -122,7 +122,7 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
   }
   d.spread_to_atr = +ratio.toFixed(2);
 
-  // Rate Limiting / Throttle
+  // Rate Limiting (Throttle)
   const GAP = +(process.env.MIN_CALL_SEC || 60) * 1000;
   if (Date.now() - runtimeState.lastAiCall < GAP) {
     return res.json({ action: 'HOLD', reason: 'throttle' });
@@ -177,7 +177,7 @@ app.post('/api/decide', auth(EA_KEY), async (req, res) => {
 
     res.json(out);
   } catch (e) {
-    console.error(e.message);
+    console.error('API Error:', e.message);
     res.json({ action: 'HOLD', reason: 'api error' });
   }
 });
