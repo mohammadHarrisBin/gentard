@@ -105,7 +105,7 @@ if (Date.now() - (S.lastOpenSeen || 0) < COOL) {
 });
 
 app.get('/api/state', auth(DASH_KEY), (req, res) =>
-  res.json({ ...S, net: S.pnlAll - S.spent, online: Date.now() - S.lastSeen < 30000 }));
+  res.json({ ...S, net: S.pnlAll - S.spent, online: Date.now() - S.lastSeen < 90000 }));
 app.post('/api/pause', auth(DASH_KEY), (req, res) => { S.paused = !!req.body.paused; save(); res.json({ paused: S.paused }); });
 app.post('/api/topup', auth(DASH_KEY), (req, res) => { S.credit += +req.body.usd || 0; save(); res.json({ credit: S.credit }); });
 
