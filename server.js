@@ -21,7 +21,10 @@ const auth = (key) => (req, res, next) =>
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
-app.use(express.static('public'));
+
+const path = require('path');
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.post('/api/decide', auth(EA_KEY), async (req, res) => {
   const d = req.body;
