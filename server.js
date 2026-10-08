@@ -80,7 +80,7 @@ S.lastAiCall = Date.now();
     S.spent += cost; S.credit -= cost; S.calls++;
     let out = { action: 'HOLD' };
     try { out = JSON.parse(r.choices[0].message.content.match(/\{[\s\S]*\}/)[0]); } catch {}
-    if (!['BUY', 'SELL', 'HOLD', 'CLOSE'].includes(out.action)) out.action = 'HOLD';
+    if (!['BUY', 'SELL', 'HOLD'].includes(out.action)) out.action = 'HOLD';
     if ((out.action === 'BUY' || out.action === 'SELL') && (out.confidence || 0) < +(process.env.MIN_CONF || 70)) out.action = 'HOLD';
     S.log.unshift({ t: Date.now(), action: out.action, reason: out.reason || '', cost });
     S.log = S.log.slice(0, 50);
